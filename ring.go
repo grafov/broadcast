@@ -14,24 +14,26 @@ type ringbuf struct {
 	RCount [buflen]int64
 }
 
+var maxDataItems = 30
+
 func consume(buf *ringbuf, name int) {
 	var cur int64
 	var w int
-	for {
+	for i := 0; i < maxDataItems; i++ {
 	checkCounter:
 		rcount := atomic.LoadInt64(&buf.RCount[cur])
 		// Row is empty.
 		if rcount <= 0 {
 			time.Sleep(100 * time.Microsecond)
 			w++
-			fmt.Println(name, cur, "wait for data", w)
+			//			fmt.Println(name, cur, "wait for data", w)
 			goto checkCounter
 		}
-		data := buf.Rows[cur]
+		val := buf.Rows[cur]
 		atomic.AddInt64(&buf.RCount[cur], -1)
 		// pass data to something
 		// ...
-		fmt.Println(name, cur, data.(int))
+		fmt.Println(name, cur, val.(int))
 		cur++
 		cur = cur % buflen
 	}
@@ -42,7 +44,7 @@ var workers = 10
 func generate(data *ringbuf) int {
 	var cur int64
 	var w int
-	for i := 0; i < 20; i++ {
+	for i := 0; i < maxDataItems; i++ {
 	waitForWorkers:
 		if !atomic.CompareAndSwapInt64(&data.RCount[cur], 0, -1) {
 			time.Sleep(10 * time.Microsecond)
@@ -52,7 +54,7 @@ func generate(data *ringbuf) int {
 		// Assign new value:
 		data.Rows[cur] = i
 		atomic.StoreInt64(&data.RCount[cur], int64(workers))
-		fmt.Println("G", cur, data)
+		fmt.Println("G", cur, data.Rows)
 		cur++
 		cur = cur % buflen
 	}
@@ -65,7 +67,7 @@ func main() {
 		go consume(&rb, i)
 	}
 	w := generate(&rb)
-	time.Sleep(50 * time.Millisecond)
-	fmt.Printf("%#v\n", rb)
+	time.Sleep(100 * time.Millisecond)
+	fmt.Printf("%#v\n", rb.Rows)
 	fmt.Printf("wait workers for %d\n", w)
 }
