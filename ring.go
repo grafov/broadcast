@@ -63,10 +63,14 @@ func generate(data *ringbuf) int {
 		// be zero.  For clarity generator set it to -1. It will
 		// prevent this row from reading by the workers.
 		if !atomic.CompareAndSwapInt64(&data.RCount[cur], 0, -1) {
+			// The row hasn't read yet. So the generator waits for all
+			// the consumers read it.
 			time.Sleep(5 * time.Microsecond)
 			w++
 			goto waitForWorkers
 		}
+
+		// vvv CRITICAL CODE SECTION: WRITE TO THE ROW IS ALLOWED HERE
 
 		// The row protected by Rcount=-1 here.
 		// So it can safely assign a new value here.
@@ -74,6 +78,8 @@ func generate(data *ringbuf) int {
 
 		// Reinitialize RCount for enable reading again: set it to the number of workers.
 		atomic.StoreInt64(&data.RCount[cur], int64(workers))
+
+		// ^^^ THE END OF CRITICAL CODE SECTION
 
 		// Here the data from the row could be read by any worker.
 		fmt.Println("G", cur, data.Rows)
