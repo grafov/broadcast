@@ -17,23 +17,34 @@ type ringbuf struct {
 var maxDataItems = 30
 
 func consume(buf *ringbuf, name int) {
-	var cur int64
-	var w int
+	var (
+		cur int64
+		w   int
+	)
 	for i := 0; i < maxDataItems; i++ {
 	checkCounter:
 		rcount := atomic.LoadInt64(&buf.RCount[cur])
-		// Row is empty.
+		// Check when generator writing to this row (-1) or the row
+		// has been read by all consumers.
 		if rcount <= 0 {
 			time.Sleep(10 * time.Microsecond)
 			w++
 			fmt.Println(name, cur, "wait for data", w)
 			goto checkCounter
 		}
+
+		// Generator will wait until RCount=0 so it can be safely read
+		// from the row here.
 		val := buf.Rows[cur]
+
+		// The row has been consumed so decrease read count.
 		atomic.AddInt64(&buf.RCount[cur], -1)
-		// pass data to something
+
+		// Pass data to something
 		// ...
 		fmt.Println(name, cur, val.(int))
+
+		// Scroll to the next row.
 		cur++
 		cur = cur % buflen
 	}
@@ -42,19 +53,32 @@ func consume(buf *ringbuf, name int) {
 var workers = 10
 
 func generate(data *ringbuf) int {
-	var cur int64
-	var w int
+	var (
+		cur int64
+		w   int
+	)
 	for i := 0; i < maxDataItems; i++ {
 	waitForWorkers:
+		// If data has been read by all workers then the RCount must
+		// be zero.  For clarity generator set it to -1. It will
+		// prevent this row from reading by the workers.
 		if !atomic.CompareAndSwapInt64(&data.RCount[cur], 0, -1) {
-			time.Sleep(10 * time.Microsecond)
+			time.Sleep(5 * time.Microsecond)
 			w++
 			goto waitForWorkers
 		}
-		// Assign new value:
+
+		// The row protected by Rcount=-1 here.
+		// So it can safely assign a new value here.
 		data.Rows[cur] = i
+
+		// Reinitialize RCount for enable reading again: set it to the number of workers.
 		atomic.StoreInt64(&data.RCount[cur], int64(workers))
+
+		// Here the data from the row could be read by any worker.
 		fmt.Println("G", cur, data.Rows)
+
+		// Scroll to the next row.
 		cur++
 		cur = cur % buflen
 	}
@@ -63,10 +87,14 @@ func generate(data *ringbuf) int {
 
 func main() {
 	var rb ringbuf
+	// Create and run workers.
 	for i := 0; i < workers; i++ {
 		go consume(&rb, i)
 	}
+
+	// Start generator. It generates sequence, stores it to ringbuf and exits.
 	w := generate(&rb)
+
 	time.Sleep(100 * time.Millisecond)
 	fmt.Printf("%#v\n", rb.Rows)
 	fmt.Printf("wait workers for %d\n", w)
