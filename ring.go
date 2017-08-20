@@ -24,9 +24,9 @@ func consume(buf *ringbuf, name int) {
 		rcount := atomic.LoadInt64(&buf.RCount[cur])
 		// Row is empty.
 		if rcount <= 0 {
-			time.Sleep(100 * time.Microsecond)
+			time.Sleep(10 * time.Microsecond)
 			w++
-			//			fmt.Println(name, cur, "wait for data", w)
+			fmt.Println(name, cur, "wait for data", w)
 			goto checkCounter
 		}
 		val := buf.Rows[cur]
