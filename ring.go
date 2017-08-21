@@ -3,6 +3,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"runtime/trace"
 	"sync/atomic"
 	"time"
 )
@@ -14,7 +16,7 @@ type ringbuf struct {
 	RCount [buflen]int64
 }
 
-var maxDataItems = 30
+var maxDataItems = 10
 
 func consume(buf *ringbuf, name int) {
 	var (
@@ -50,7 +52,7 @@ func consume(buf *ringbuf, name int) {
 	}
 }
 
-var workers = 10
+var workers = 4
 
 func generate(data *ringbuf) {
 	for i := 0; i < maxDataItems; i++ {
@@ -102,6 +104,9 @@ waitForWorkers:
 }
 
 func main() {
+	tfile, _ := os.OpenFile("/tmp/trace.out", os.O_CREATE|os.O_RDWR, 0666)
+	trace.Start(tfile)
+
 	var rb ringbuf
 	// Create and run workers.
 	for i := 0; i < workers; i++ {
@@ -111,6 +116,8 @@ func main() {
 	// Start generator. It generates sequence, stores it to ringbuf and exits.
 	generate(&rb)
 
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(1 * time.Second)
 	fmt.Printf("%#v\n", rb.Rows)
+
+	trace.Stop()
 }
