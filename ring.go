@@ -52,43 +52,53 @@ func consume(buf *ringbuf, name int) {
 
 var workers = 10
 
-func generate(data *ringbuf) int {
+func generate(data *ringbuf) {
+	for i := 0; i < maxDataItems; i++ {
+		go put(data, i)
+	}
+}
+
+func put(rb *ringbuf, value interface{}) {
 	var (
 		cur int64
-		w   int
+		adr = &rb.RCount[cur]
 	)
-	for i := 0; i < maxDataItems; i++ {
-	waitForWorkers:
-		// If data has been read by all workers then the RCount must
-		// be zero.  For clarity generator set it to -1. It will
-		// prevent this row from reading by the workers.
-		if !atomic.CompareAndSwapInt64(&data.RCount[cur], 0, -1) {
-			// The row hasn't read yet. So the generator waits for all
-			// the consumers read it.
-			time.Sleep(5 * time.Microsecond)
-			w++
+waitForWorkers:
+	// If data has been read by all workers then the RCount must
+	// be zero.  For clarity generator set it to -1. It will
+	// prevent this row from reading by the workers.
+	if !atomic.CompareAndSwapInt64(adr, 0, -1) {
+		if rc := atomic.LoadInt64(adr); rc == -1 {
+			// The row already has been taken by another writer.
+			// Scroll to the next one.
+			cur++
+			cur = cur % buflen
+			adr = &rb.RCount[cur]
 			goto waitForWorkers
 		}
-
-		// vvv CRITICAL CODE SECTION: WRITE TO THE ROW IS ALLOWED HERE
-
-		// The row protected by Rcount=-1 here.
-		// So it can safely assign a new value here.
-		data.Rows[cur] = i
-
-		// Reinitialize RCount for enable reading again: set it to the number of workers.
-		atomic.StoreInt64(&data.RCount[cur], int64(workers))
-
-		// ^^^ THE END OF CRITICAL CODE SECTION
-
-		// Here the data from the row could be read by any worker.
-		fmt.Println("G", cur, data.Rows)
-
-		// Scroll to the next row.
-		cur++
-		cur = cur % buflen
+		// The row hasn't read yet. So the generator waits for all
+		// the consumers read it.
+		time.Sleep(100 * time.Nanosecond)
+		goto waitForWorkers
 	}
-	return w
+
+	// vvv CRITICAL CODE SECTION: WRITE TO THE ROW IS ALLOWED HERE
+
+	// The row protected by Rcount=-1 here.
+	// So it can safely assign a new value here.
+	rb.Rows[cur] = value
+
+	// Reinitialize RCount for enable reading again: set it to the number of workers.
+	atomic.StoreInt64(&rb.RCount[cur], int64(workers))
+
+	// ^^^ THE END OF CRITICAL CODE SECTION
+
+	// Here the data from the row could be read by any worker.
+	fmt.Println("G", cur, rb.Rows)
+
+	// Scroll to the next row.
+	cur++
+	cur = cur % buflen
 }
 
 func main() {
@@ -99,9 +109,8 @@ func main() {
 	}
 
 	// Start generator. It generates sequence, stores it to ringbuf and exits.
-	w := generate(&rb)
+	generate(&rb)
 
 	time.Sleep(100 * time.Millisecond)
 	fmt.Printf("%#v\n", rb.Rows)
-	fmt.Printf("wait workers for %d\n", w)
 }
