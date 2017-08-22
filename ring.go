@@ -21,15 +21,16 @@ func consume(buf *ringbuf, name int) {
 		cur int64
 		w   int
 	)
-	for i := 0; i < maxDataItems; i++ {
+	for i := 0; i < maxDataItems*generators; i++ {
 	checkCounter:
-		rcount := atomic.LoadInt64(&buf.RCount[cur])
+		adr := &buf.RCount[cur]
+		rcount := atomic.LoadInt64(adr)
 		// Check when generator writing to this row (-1) or the row
 		// is empty (0).
 		if rcount <= 0 {
 			time.Sleep(10 * time.Microsecond)
 			w++
-			//			fmt.Println(name, cur, "wait for data", w)
+			fmt.Println(name, cur, "wait for data", w)
 			goto checkCounter
 		}
 
@@ -44,7 +45,7 @@ func consume(buf *ringbuf, name int) {
 		fmt.Println(name, cur, val.(string))
 
 		// The row has been consumed so decrease read count.
-		atomic.AddInt64(&buf.RCount[cur], -1)
+		atomic.AddInt64(adr, -1)
 
 		// Scroll to the next row.
 		cur++
@@ -53,7 +54,7 @@ func consume(buf *ringbuf, name int) {
 }
 
 var (
-	generators = 2
+	generators = 30
 	consumers  = 3
 )
 
@@ -89,7 +90,7 @@ func generate(rb *ringbuf, name int) {
 		// So it can safely assign a new value here.
 		rb.Rows[cur] = fmt.Sprintf("g%d-%d", name, i)
 
-		fmt.Println(fmt.Sprintf("G%d", name), cur, rb.Rows, rb.RCount)
+		fmt.Println(fmt.Sprintf("G%d", name), cur, rb.Rows[cur], atomic.LoadInt64(adr))
 
 		// Reinitialize RCount for enable reading again: set it to the number of workers.
 		atomic.StoreInt64(adr, int64(consumers))
@@ -103,7 +104,7 @@ func generate(rb *ringbuf, name int) {
 }
 
 func main() {
-	//	tfile, _ := os.OpenFile("/tmp/trace.out", os.O_CREATE|os.O_RDWR, 0666)
+	//	tfile, _ := os.OpenFile("/tmp/trace.out", os.O_CREATE|os.O_WRONLY, 0666)
 	//	trace.Start(tfile)
 
 	var rb ringbuf
@@ -119,7 +120,7 @@ func main() {
 		go consume(&rb, i)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(2 * time.Second)
 	//	fmt.Printf("%#v\n", rb.Rows)
 
 	//	trace.Stop()
