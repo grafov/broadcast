@@ -11,14 +11,14 @@ import (
 
 func main() {
 	benchBroadcast()
-	time.Sleep(100 * time.Millisecond)
-	benchBcast()
+	//	time.Sleep(100 * time.Millisecond)
+	//	benchBcast()
 }
 
 func benchBroadcast() {
 	const (
-		totalReaders  = 20
-		totalMessages = 100
+		totalReaders  = 2
+		totalMessages = 12
 	)
 	var wg sync.WaitGroup
 	ch := broadcast.New()
@@ -26,28 +26,37 @@ func benchBroadcast() {
 	for i := 0; i < totalReaders; i++ {
 		members[i] = ch.AddReader()
 	}
+	var results [totalReaders][totalMessages]string
 
 	started := time.Now()
 	for n := 0; n < totalReaders; n++ {
-		wg.Add(totalMessages)
+		wg.Add(1)
 		go func(i int) {
 			r := members[i]
-			var count int
 			for n := 0; n < totalMessages; n++ {
-				r.Recv()
-				count++
-				wg.Done()
-
+				result, _ := r.Recv()
+				results[i][n] = result.(string)
 			}
-			println("reader", i, count)
+			wg.Done()
 		}(n)
 	}
-	time.Sleep(10 * time.Microsecond)
+	//	time.Sleep(3 * time.Second)
 	for n := 0; n < totalMessages; n++ {
 		ch.Send(fmt.Sprintf("message-%d", n))
 	}
 	println("sent")
+
 	wg.Wait()
+	println("=========================================")
+	// возможное решение: сделать дырку с маркером между частями чтения и записи
+	// ее должен писать врайтер? после последнего записанного?
+	for m, values := range results {
+		for i, value := range values {
+			println(m, i, value)
+		}
+		println()
+
+	}
 	end := time.Since(started)
 	fmt.Printf("brodcast package time %v\n", end)
 }
