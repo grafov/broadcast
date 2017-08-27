@@ -1,5 +1,7 @@
 # The broadcasting experiment
 
-Proof of concept for fast broadcasting pattern.
-No channels for workers, no sync.Mutexes.
-All data passing in place through ring buffer.
+Many writers, many readers. The each message should be read by each reader only once.
+Proof of concept for fast broadcasting pattern on atomics and ring buffer.
+ 
+No channels. No mutexes.
+
