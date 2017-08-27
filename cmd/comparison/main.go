@@ -9,24 +9,25 @@ import (
 	"github.com/grafov/broadcast"
 )
 
+const (
+	totalReaders  = 200000
+	totalMessages = 100
+)
+
 func main() {
 	benchBroadcast()
-	//	time.Sleep(100 * time.Millisecond)
-	//	benchBcast()
+	time.Sleep(100 * time.Millisecond)
+	benchBcast()
 }
 
 func benchBroadcast() {
-	const (
-		totalReaders  = 2
-		totalMessages = 12
-	)
 	var wg sync.WaitGroup
 	ch := broadcast.New()
 	var members [totalReaders]*broadcast.Reader
 	for i := 0; i < totalReaders; i++ {
 		members[i] = ch.AddReader()
 	}
-	var results [totalReaders][totalMessages]string
+	//	var results [totalReaders][totalMessages]string
 
 	started := time.Now()
 	for n := 0; n < totalReaders; n++ {
@@ -34,11 +35,11 @@ func benchBroadcast() {
 		go func(i int) {
 			r := members[i]
 			for n := 0; n < totalMessages; n++ {
-				result, ok := r.Recv()
+				_, ok := r.Recv()
 				if !ok {
 					break
 				}
-				results[i][n] = result.(string)
+				//				results[i][n] = result.(string)
 			}
 			wg.Done()
 		}(n)
@@ -47,28 +48,21 @@ func benchBroadcast() {
 	for n := 0; n < totalMessages; n++ {
 		ch.Send(fmt.Sprintf("message-%d", n))
 	}
-	println("sent")
-
+	println("broadcast: messages sent")
 	wg.Wait()
-	println("=========================================")
-	// возможное решение: сделать дырку с маркером между частями чтения и записи
-	// ее должен писать врайтер? после последнего записанного?
-	for m, values := range results {
-		for i, value := range values {
-			println(m, i, value)
-		}
-		println()
+	// println("=========================================")
+	// for m, values := range results {
+	// 	for i, value := range values {
+	// 		println(m, i, value)
+	// 	}
+	// 	println()
 
-	}
+	// }
 	end := time.Since(started)
 	fmt.Printf("brodcast package time %v\n", end)
 }
 
 func benchBcast() {
-	const (
-		totalReaders  = 1000
-		totalMessages = 10000
-	)
 	var wg sync.WaitGroup
 	group := bcast.NewGroup()           // create broadcast group
 	go group.Broadcast(2 * time.Minute) // accepts messages
@@ -89,8 +83,9 @@ func benchBcast() {
 		}(n)
 	}
 	for n := 0; n < totalMessages; n++ {
-		group.Send("sample message for the benchmark")
+		group.Send(fmt.Sprintf("message-%d", n))
 	}
+	println("bcast: messages sent")
 	wg.Wait()
 	end := time.Since(started)
 	fmt.Printf("bcast package time %v\n", end)

@@ -1,26 +1,22 @@
 package broadcast
 
 import (
+	"errors"
 	"fmt"
-	"sync"
 	"sync/atomic"
 	"time"
 )
 
-const buflen = 8
+const buflen = 64
 
-type (
-	channel struct {
-		sync.Mutex // XXX
-
-		Readers         int64
-		WaitReaderCount int64
-		NextIdx         uint64
-		Generation      [buflen]uint64 // incremented on each write
-		RL              [buflen]int64  // reads left
-		Payload         [buflen]interface{}
-	}
-)
+type channel struct {
+	Readers         int64
+	WaitReaderCount int64
+	NextIdx         uint64
+	Generation      [buflen]uint64 // incremented on each write
+	RL              [buflen]int64  // reads left
+	Payload         [buflen]interface{}
+}
 
 func New() *channel {
 	c := new(channel)
@@ -30,7 +26,7 @@ func New() *channel {
 	return c
 }
 
-func (c *channel) Send(data interface{}) {
+func (c *channel) Send(data interface{}) error {
 	var (
 		cur   = atomic.LoadUint64(&c.NextIdx)
 		rladr = &c.RL[cur]
@@ -54,15 +50,16 @@ waitForReaders:
 			// The row hasn't read yet. So the generator waits for all
 			// the consumers read it.
 			pause := atomic.LoadInt64(&c.WaitReaderCount)
-			if pause > 100 {
-				time.Sleep(100 * time.Nanosecond)
+			if pause > 1000 {
+				time.Sleep(1000 * time.Nanosecond)
 				rl := atomic.LoadInt64(rladr)
 				// XXX
 				println("here big", rl, pause, c.NextIdx, data.(string))
 				c.printDebug(cur, data)
 				//				os.Exit(1)
 				//				return // XXX
-				goto waitForReaders
+				return errors.New("channel full")
+				//				goto waitForReaders
 			}
 			atomic.AddInt64(&c.WaitReaderCount, 1)
 			//			rl := atomic.LoadInt64(adr)
@@ -80,9 +77,10 @@ waitForReaders:
 	// Reinitialize RL for enable reading again: set it to the number of readers.
 	atomic.StoreInt64(rladr, atomic.LoadInt64(&c.Readers))
 	c.printDebug(cur%buflen, data)
+	return nil
 }
 
-var readers []*Reader
+//var readers []*Reader
 
 func (c *channel) AddReader() *Reader {
 	var r = new(Reader)
@@ -91,8 +89,8 @@ func (c *channel) AddReader() *Reader {
 	r.from = (r.cur - 1) % buflen
 
 	// XXX для отладки
-	readers = append(readers, r)
-	println(atomic.AddInt64(&c.Readers, 1))
+	//	readers = append(readers, r)
+	atomic.AddInt64(&c.Readers, 1)
 
 	return r
 }
@@ -157,19 +155,20 @@ checkRC:
 }
 
 func (c *channel) printDebug(cur uint64, val interface{}) {
-	c.Lock()
-	println("Ringbuf:")
-	for i, rl := range c.RL {
-		fmt.Printf("%4d: %5d g:%d %v\n", i, rl, c.Generation[i], c.Payload[i])
-	}
-	println("Readers:")
-	for i, r := range readers {
-		fmt.Printf("%4d <- v:%d %5d %5d\n", i, r.version, r.cur, r.from)
-	}
-	println("Writer:")
-	println(c.NextIdx)
-	if val != nil {
-		println(cur, val.(string))
-	}
-	c.Unlock()
+	return
+	//	c.Lock()
+	// println("Ringbuf:")
+	// for i, rl := range c.RL {
+	// 	fmt.Printf("%4d: %5d g:%d %v\n", i, rl, c.Generation[i], c.Payload[i])
+	// }
+	// println("Readers:")
+	// for i, r := range readers {
+	// 	fmt.Printf("%4d <- v:%d %5d %5d\n", i, r.version, r.cur, r.from)
+	// }
+	// println("Writer:")
+	// println(c.NextIdx)
+	// if val != nil {
+	// 	println(cur, val.(string))
+	// }
+	//	c.Unlock()
 }
