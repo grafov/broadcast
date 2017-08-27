@@ -34,7 +34,10 @@ func benchBroadcast() {
 		go func(i int) {
 			r := members[i]
 			for n := 0; n < totalMessages; n++ {
-				result, _ := r.Recv()
+				result, ok := r.Recv()
+				if !ok {
+					break
+				}
 				results[i][n] = result.(string)
 			}
 			wg.Done()
