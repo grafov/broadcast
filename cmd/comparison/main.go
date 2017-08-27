@@ -17,8 +17,8 @@ func main() {
 
 func benchBroadcast() {
 	const (
-		totalReaders  = 1000
-		totalMessages = 10000
+		totalReaders  = 20
+		totalMessages = 100
 	)
 	var wg sync.WaitGroup
 	ch := broadcast.New()
@@ -29,19 +29,24 @@ func benchBroadcast() {
 
 	started := time.Now()
 	for n := 0; n < totalReaders; n++ {
-		wg.Add(1)
+		wg.Add(totalMessages)
 		go func(i int) {
 			r := members[i]
+			var count int
 			for n := 0; n < totalMessages; n++ {
 				r.Recv()
+				count++
+				wg.Done()
+
 			}
-			wg.Done()
+			println("reader", i, count)
 		}(n)
 	}
+	time.Sleep(10 * time.Microsecond)
 	for n := 0; n < totalMessages; n++ {
-		ch.Send("sample message for the benchmark")
+		ch.Send(fmt.Sprintf("message-%d", n))
 	}
-	print("sent")
+	println("sent")
 	wg.Wait()
 	end := time.Since(started)
 	fmt.Printf("brodcast package time %v\n", end)
